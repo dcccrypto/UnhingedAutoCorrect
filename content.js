@@ -223,48 +223,88 @@ function replaceImages() {
       return memeImages[Math.floor(Math.random() * memeImages.length)];
     }
     
-    // Proceed with image replacement
-    processRegularImages();
-    processBackgroundImages();
-    processPictureElements();
-    processIframes();
+    // Process images in batches to prevent browser freezing
+    setTimeout(() => processRegularImages(), 0);
+    setTimeout(() => processBackgroundImages(), 50);
+    setTimeout(() => processPictureElements(), 100);
+    setTimeout(() => processIframes(), 150);
     
     function processRegularImages() {
-      const images = document.querySelectorAll('img');
-      images.forEach(img => {
+      // Limit the number of images processed at once
+      const images = Array.from(document.querySelectorAll('img')).slice(0, 100);
+      
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        // Skip cross-origin images that might cause issues
+        if (isCrossOriginImage(img)) {
+          continue;
+        }
+        
         if (!img.dataset.originalSrc && !img.src.includes('chrome-extension://')) {
           img.dataset.originalSrc = img.src;
           img.src = getRandomMeme();
           
-          // Also handle srcset if present
           if (img.srcset) {
             img.dataset.originalSrcset = img.srcset;
             img.srcset = '';
           }
-          
-          // Set up error handler to catch and retry failed loads
-          img.onerror = function() {
-            if (img.src !== img.dataset.originalSrc) {
-              img.src = getRandomMeme(); // Try another random meme
-            }
-          };
         }
-      });
+      }
+      
+      // If there are more images, process them in the next batch
+      if (document.querySelectorAll('img').length > 100) {
+        setTimeout(processMoreImages, 200);
+      }
+    }
+    
+    function processMoreImages() {
+      const images = Array.from(document.querySelectorAll('img')).slice(100, 200);
+      
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        if (!img.dataset.originalSrc && !img.src.includes('chrome-extension://')) {
+          img.dataset.originalSrc = img.src;
+          img.src = getRandomMeme();
+          
+          if (img.srcset) {
+            img.dataset.originalSrcset = img.srcset;
+            img.srcset = '';
+          }
+        }
+      }
+      
+      // Continue with more batches if needed
+      if (document.querySelectorAll('img').length > 200) {
+        setTimeout(processMoreImages, 200);
+      }
     }
     
     function processBackgroundImages() {
-      // Target elements with inline style background images
+      // Only select elements with inline background image styles
       const backgroundElements = document.querySelectorAll('[style*="background-image"]');
-      backgroundElements.forEach(el => {
+      const maxElements = Math.min(backgroundElements.length, 100);
+      
+      for (let i = 0; i < maxElements; i++) {
+        const el = backgroundElements[i];
         if (!el.dataset.originalBg) {
           el.dataset.originalBg = el.style.backgroundImage;
           el.style.backgroundImage = `url(${getRandomMeme()})`;
         }
-      });
+      }
       
-      // Also check for elements that might have background images from CSS
-      const allElements = document.querySelectorAll('*');
-      allElements.forEach(el => {
+      // Don't use querySelectorAll('*') - it's too expensive
+      // Instead, only check visible elements with common image-containing tags
+      const potentialBgElements = document.querySelectorAll('div, section, header, footer, aside, article, main, nav');
+      const visibleElements = Array.from(potentialBgElements).slice(0, 100);
+      
+      for (let i = 0; i < visibleElements.length; i++) {
+        const el = visibleElements[i];
+        // Skip if already processed or not visible
+        if (el.dataset.bgChecked || !isElementVisible(el)) {
+          continue;
+        }
+        
+        el.dataset.bgChecked = 'true';
         const computedStyle = window.getComputedStyle(el);
         const bgImage = computedStyle.getPropertyValue('background-image');
         
@@ -272,52 +312,55 @@ function replaceImages() {
           el.dataset.originalComputedBg = bgImage;
           el.style.backgroundImage = `url(${getRandomMeme()})`;
         }
-      });
+      }
+    }
+    
+    // Helper function to check if element is visible (approximate)
+    function isElementVisible(el) {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
     }
     
     function processPictureElements() {
       // Handle picture elements with source elements
       const pictureSources = document.querySelectorAll('picture source');
-      pictureSources.forEach(source => {
+      const maxSources = Math.min(pictureSources.length, 50);
+      
+      for (let i = 0; i < maxSources; i++) {
+        const source = pictureSources[i];
         if (!source.dataset.originalSrcset && source.srcset) {
           source.dataset.originalSrcset = source.srcset;
           source.srcset = getRandomMeme();
         }
-      });
+      }
     }
     
     function processIframes() {
       try {
-        // Try to access same-origin iframes
-        const iframes = document.querySelectorAll('iframe');
-        iframes.forEach(iframe => {
+        // Limit the number of iframes processed
+        const iframes = Array.from(document.querySelectorAll('iframe')).slice(0, 5);
+        
+        for (let i = 0; i < iframes.length; i++) {
+          const iframe = iframes[i];
           try {
             if (iframe.contentDocument && iframe.contentDocument.body) {
-              // Process images inside iframe
-              const iframeImages = iframe.contentDocument.querySelectorAll('img');
-              iframeImages.forEach(img => {
+              // Process only a limited number of images inside iframe
+              const iframeImages = Array.from(iframe.contentDocument.querySelectorAll('img')).slice(0, 20);
+              
+              for (let j = 0; j < iframeImages.length; j++) {
+                const img = iframeImages[j];
                 if (!img.dataset.originalSrc) {
                   img.dataset.originalSrc = img.src;
                   img.src = getRandomMeme();
                 }
-              });
-              
-              // Process background images inside iframe
-              const iframeBgElements = iframe.contentDocument.querySelectorAll('[style*="background-image"]');
-              iframeBgElements.forEach(el => {
-                if (!el.dataset.originalBg) {
-                  el.dataset.originalBg = el.style.backgroundImage;
-                  el.style.backgroundImage = `url(${getRandomMeme()})`;
-                }
-              });
+              }
             }
           } catch (e) {
             // Cross-origin iframe, can't access
-            console.debug("Can't access iframe content (likely cross-origin)");
           }
-        });
+        }
       } catch (e) {
-        console.debug("Error processing iframes:", e);
+        // Error handling
       }
     }
   });
@@ -402,101 +445,129 @@ function restoreImages() {
   }
 }
 
-// Update the observer to handle dynamic content better
-const observer = new MutationObserver((mutations) => {
+// Update the observer to be less aggressive
+const observer = new MutationObserver(debounce((mutations) => {
   if (!isEnabled) return;
 
   let hasTextChange = false;
   let hasImageChange = false;
 
-  mutations.forEach((mutation) => {
-    // Check for text changes
-    if (mutation.type === 'characterData' || mutation.addedNodes.length > 0) {
+  // Analyze at most 50 mutations to prevent freezing on large DOM changes
+  const mutationsToProcess = mutations.slice(0, 50);
+  
+  mutationsToProcess.forEach((mutation) => {
+    // Check for text changes in text nodes only
+    if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
       hasTextChange = true;
     }
     
-    // Check for image or style changes
+    // Check for image changes
     if (mutation.type === 'attributes' && 
-        (mutation.attributeName === 'src' || 
-         mutation.attributeName === 'srcset' || 
-         mutation.attributeName === 'style')) {
+        (mutation.attributeName === 'src' || mutation.attributeName === 'srcset')) {
       hasImageChange = true;
     }
     
-    // Check for added images
-    if (mutation.addedNodes.length > 0) {
+    // Check for added nodes but limit processing
+    if (mutation.addedNodes.length > 0 && mutation.addedNodes.length < 10) {
       const addedImages = Array.from(mutation.addedNodes)
         .filter(node => 
           node.nodeName === 'IMG' || 
-          (node.nodeType === Node.ELEMENT_NODE && 
-           (node.querySelector('img') || 
-            node.querySelector('[style*="background-image"]') || 
-            node.querySelector('picture'))));
+          (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'PICTURE'));
       
       if (addedImages.length > 0) {
         hasImageChange = true;
+      }
+      
+      // Check for added text nodes
+      const hasAddedTextNodes = Array.from(mutation.addedNodes)
+        .some(node => node.nodeType === Node.TEXT_NODE);
+      
+      if (hasAddedTextNodes) {
+        hasTextChange = true;
       }
     }
   });
 
   // Process text changes
   if (hasTextChange) {
-    mutations.forEach((mutation) => {
-      // Handle text changes
+    // Process only a limited number of mutations
+    for (let i = 0; i < Math.min(mutationsToProcess.length, 20); i++) {
+      const mutation = mutationsToProcess[i];
+      
       if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
-        mutation.target.textContent = translateText(mutation.target.textContent);
+        // Skip if text is very long (> 1000 chars)
+        if (mutation.target.textContent.length < 1000) {
+          mutation.target.textContent = translateText(mutation.target.textContent);
+        }
       }
       
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          node.textContent = translateText(node.textContent);
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          if (!['SCRIPT', 'STYLE'].includes(node.tagName)) {
-            const walker = document.createTreeWalker(
-              node,
-              NodeFilter.SHOW_TEXT,
-              null,
-              false
-            );
-
-            let textNode;
-            while ((textNode = walker.nextNode())) {
-              textNode.textContent = translateText(textNode.textContent);
+      if (mutation.addedNodes.length > 0) {
+        // Only process a limited number of added nodes
+        const nodesToProcess = Array.from(mutation.addedNodes).slice(0, 5);
+        
+        nodesToProcess.forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            if (node.textContent.length < 1000) {
+              node.textContent = translateText(node.textContent);
             }
+          } else if (node.nodeType === Node.ELEMENT_NODE && !['SCRIPT', 'STYLE'].includes(node.tagName)) {
+            // Limit the number of text nodes to process within added elements
+            processElementTextNodes(node, 10);
           }
-        }
-      });
-    });
+        });
+      }
+    }
   }
 
-  // Process image changes if needed
+  // Process image changes if needed, but with a delay to prevent freezing
   if (hasImageChange && shouldReplaceImages) {
-    replaceImages();
+    setTimeout(replaceImages, 300);
   }
-});
+}, 100)); // Reduce frequency of observer callback
 
-// Start observing with improved configuration
+// Helper function to process a limited number of text nodes in an element
+function processElementTextNodes(element, limit) {
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  );
+  
+  let count = 0;
+  let textNode;
+  while ((textNode = walker.nextNode()) && count < limit) {
+    if (textNode.textContent.length < 1000) {
+      textNode.textContent = translateText(textNode.textContent);
+      count++;
+    }
+  }
+}
+
+// Start observing with more focused configuration
 observer.observe(document.body, {
   childList: true,
   subtree: true,
   characterData: true,
   attributes: true,
-  attributeFilter: ['src', 'srcset', 'style']
+  attributeFilter: ['src', 'srcset'] // Remove 'style' to reduce triggers
 });
 
-// Handle lazy-loaded images that appear during scrolling
+// Handle lazy-loaded images with a more efficient debounce
 window.addEventListener('scroll', debounce(function() {
   if (isEnabled && shouldReplaceImages) {
-    replaceImages();
+    // Use setTimeout to prevent blocking the main thread
+    setTimeout(replaceImages, 500);
   }
-}, 200));
+}, 500)); // Increase to 500ms
 
-// Debounce helper function to improve performance
+// Improved debounce helper function
 function debounce(func, wait) {
   let timeout;
   return function(...args) {
+    const context = this;
     clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
+    timeout = setTimeout(() => func.apply(context, args), wait);
   };
 }
 
@@ -532,4 +603,25 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initializeExtension);
 } else {
   initializeExtension();
+}
+
+// Helper function to detect potentially problematic cross-origin images
+function isCrossOriginImage(img) {
+  // Skip images without src
+  if (!img.src) return false;
+  
+  try {
+    // Skip images with cross-origin restrictions that might cause errors
+    if (img.crossOrigin === null && new URL(img.src).origin !== window.location.origin) {
+      return true;
+    }
+    
+    // Skip images from known problematic domains that might cause freezing
+    const imgUrl = img.src.toLowerCase();
+    const problematicDomains = ['maps.googleapis.com', 'www.google-analytics.com', 'data:'];
+    return problematicDomains.some(domain => imgUrl.includes(domain));
+  } catch (e) {
+    // If there's an error parsing the URL, better to skip
+    return true;
+  }
 } 

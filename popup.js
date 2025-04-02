@@ -6,57 +6,90 @@ document.addEventListener('DOMContentLoaded', function() {
   const emojiFrequency = document.getElementById('emojiFrequency');
   const replaceImages = document.getElementById('replaceImages');
   const statsText = document.getElementById('statsText');
+  const resetStatsButton = document.getElementById('resetStats');
+  
+  // Track settings update status
+  let isUpdating = false;
   
   // Load saved settings
-  chrome.storage.sync.get(
-    ['enabled', 'skull', 'nsfw', 'emojiFreq', 'replaceImg', 'stats'], 
-    function(result) {
-      // Set initial state of toggles
-      enabledToggle.checked = result.enabled ?? false;
-      skullMode.checked = result.skull ?? false;
-      nsfwMode.checked = result.nsfw ?? false;
-      emojiFrequency.value = result.emojiFreq ?? 30;
-      replaceImages.checked = result.replaceImg ?? false;
-      
-      // Update emoji frequency display
-      updateEmojiFrequencyDisplay();
-      
-      // Update stats display
-      updateStatsDisplay(result.stats);
-      
-      // Setup listeners after initial state is set
-      setupEventListeners();
+  loadSettings();
+  
+  function loadSettings() {
+    try {
+      chrome.storage.sync.get(
+        ['enabled', 'skull', 'nsfw', 'emojiFreq', 'replaceImg', 'stats'], 
+        function(result) {
+          if (chrome.runtime.lastError) {
+            console.debug("Error loading settings:", chrome.runtime.lastError.message);
+            return;
+          }
+          
+          // Set initial state of toggles
+          if (enabledToggle) enabledToggle.checked = result.enabled ?? false;
+          if (skullMode) skullMode.checked = result.skull ?? false;
+          if (nsfwMode) nsfwMode.checked = result.nsfw ?? false;
+          if (emojiFrequency) emojiFrequency.value = result.emojiFreq ?? 30;
+          if (replaceImages) replaceImages.checked = result.replaceImg ?? false;
+          
+          // Update emoji frequency display
+          updateEmojiFrequencyDisplay();
+          
+          // Update stats display
+          updateStatsDisplay(result.stats);
+          
+          // Setup listeners after initial state is set
+          setupEventListeners();
+        }
+      );
+    } catch (e) {
+      console.debug("Exception in loadSettings:", e.message);
     }
-  );
+  }
   
   // Set up event listeners for toggle changes
   function setupEventListeners() {
-    enabledToggle.addEventListener('change', function() {
-      saveSettings();
-    });
+    if (enabledToggle) {
+      enabledToggle.addEventListener('change', function() {
+        saveSettings();
+      });
+    }
     
-    skullMode.addEventListener('change', function() {
-      saveSettings();
-    });
+    if (skullMode) {
+      skullMode.addEventListener('change', function() {
+        saveSettings();
+      });
+    }
     
-    nsfwMode.addEventListener('change', function() {
-      saveSettings();
-    });
+    if (nsfwMode) {
+      nsfwMode.addEventListener('change', function() {
+        saveSettings();
+      });
+    }
     
-    emojiFrequency.addEventListener('input', function() {
-      updateEmojiFrequencyDisplay();
-      saveSettings();
-    });
+    if (emojiFrequency) {
+      emojiFrequency.addEventListener('input', debounce(function() {
+        updateEmojiFrequencyDisplay();
+        saveSettings();
+      }, 250));
+    }
     
-    replaceImages.addEventListener('change', function() {
-      saveSettings();
-    });
+    if (replaceImages) {
+      replaceImages.addEventListener('change', function() {
+        saveSettings();
+      });
+    }
+    
+    if (resetStatsButton) {
+      resetStatsButton.addEventListener('click', function() {
+        resetStats();
+      });
+    }
   }
   
   // Update the emoji frequency display
   function updateEmojiFrequencyDisplay() {
     const frequencyDisplay = document.getElementById('frequencyValue');
-    if (frequencyDisplay) {
+    if (frequencyDisplay && emojiFrequency) {
       frequencyDisplay.textContent = emojiFrequency.value + '%';
     }
   }
@@ -70,28 +103,89 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Save settings to chrome.storage
   function saveSettings() {
-    const settings = {
-      enabled: enabledToggle.checked,
-      skull: skullMode.checked,
-      nsfw: nsfwMode.checked,
-      emojiFreq: parseInt(emojiFrequency.value, 10),
-      replaceImg: replaceImages.checked
-    };
+    if (isUpdating) return;
+    isUpdating = true;
     
-    chrome.storage.sync.set(settings, function() {
-      // Notify content scripts of the change
-      updateContentScript();
-    });
+    try {
+      const settings = {
+        enabled: enabledToggle ? enabledToggle.checked : false,
+        skull: skullMode ? skullMode.checked : false,
+        nsfw: nsfwMode ? nsfwMode.checked : false,
+        emojiFreq: emojiFrequency ? parseInt(emojiFrequency.value, 10) : 30,
+        replaceImg: replaceImages ? replaceImages.checked : false
+      };
+      
+      chrome.storage.sync.set(settings, function() {
+        if (chrome.runtime.lastError) {
+          console.debug("Error saving settings:", chrome.runtime.lastError.message);
+        } else {
+          // Notify content scripts of the change
+          updateContentScript();
+        }
+        isUpdating = false;
+      });
+    } catch (e) {
+      console.debug("Exception in saveSettings:", e.message);
+      isUpdating = false;
+    }
   }
   
-  // Update stats periodically
-  function setupStatsRefresh() {
-    // Check for stats updates every 2 seconds
-    setInterval(function() {
-      chrome.storage.sync.get(['stats'], function(result) {
-        updateStatsDisplay(result.stats);
+  // Reset stats
+  function resetStats() {
+    try {
+      chrome.storage.sync.set({stats: {words: 0, emojis: 0}}, function() {
+        if (chrome.runtime.lastError) {
+          console.debug("Error resetting stats:", chrome.runtime.lastError.message);
+        } else {
+          updateStatsDisplay({words: 0, emojis: 0});
+        }
       });
-    }, 2000);
+    } catch (e) {
+      console.debug("Exception in resetStats:", e.message);
+    }
+  }
+  
+  // Update stats periodically, but not too frequently
+  function setupStatsRefresh() {
+    let statsRefreshInterval = null;
+    
+    // Only refresh stats when popup is visible
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') {
+        if (!statsRefreshInterval) {
+          statsRefreshInterval = setInterval(refreshStats, 3000); // Every 3 seconds
+        }
+      } else {
+        if (statsRefreshInterval) {
+          clearInterval(statsRefreshInterval);
+          statsRefreshInterval = null;
+        }
+      }
+    });
+    
+    // Initial setup
+    if (document.visibilityState === 'visible') {
+      statsRefreshInterval = setInterval(refreshStats, 3000);
+    }
+    
+    function refreshStats() {
+      try {
+        chrome.storage.sync.get(['stats'], function(result) {
+          if (!chrome.runtime.lastError && result.stats) {
+            updateStatsDisplay(result.stats);
+          }
+        });
+      } catch (e) {
+        // Ignore errors during stats refresh
+      }
+    }
+    
+    // Clean up when popup closes
+    window.addEventListener('unload', function() {
+      if (statsRefreshInterval) {
+        clearInterval(statsRefreshInterval);
+      }
+    });
   }
   
   // Set up stats refresh
@@ -99,25 +193,29 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Send a message to the active tab to update the content script
   function updateContentScript() {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {type: 'UPDATE_STATE'}, function(response) {
-          // Handle potential error when content script is not loaded
-          if (chrome.runtime.lastError) {
-            console.debug("Content script may not be loaded:", chrome.runtime.lastError.message);
-          }
-        });
-      }
-    });
+    try {
+      chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        if (tabs && tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {type: 'UPDATE_STATE'}, function(response) {
+            // Ignore any error during message sending
+            if (chrome.runtime.lastError) {
+              console.debug("Content script may not be loaded:", chrome.runtime.lastError.message);
+            }
+          });
+        }
+      });
+    } catch (e) {
+      console.debug("Exception in updateContentScript:", e.message);
+    }
   }
   
-  // Reset stats button
-  const resetStatsButton = document.getElementById('resetStats');
-  if (resetStatsButton) {
-    resetStatsButton.addEventListener('click', function() {
-      chrome.storage.sync.set({stats: {words: 0, emojis: 0}}, function() {
-        updateStatsDisplay({words: 0, emojis: 0});
-      });
-    });
+  // Debounce function to prevent excessive calls
+  function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+      const context = this;
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(context, args), wait);
+    };
   }
 }); 
