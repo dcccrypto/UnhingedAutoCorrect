@@ -3,25 +3,39 @@
   "name": "Unhinged AutoCorrect",
   "version": "1.0",
   "description": "Replaces corporate jargon with Gen Z slang fr fr no cap",
-  "permissions": ["scripting", "storage"],
+  "permissions": ["scripting", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [{
+    "resources": [
+      "images/meme.jpg",
+      "images/meme2.jpg",
+      "images/skull16.png",
+      "images/skull48.png",
+      "images/skull128.png"
+    ],
+    "matches": ["<all_urls>"]
+  }],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/icon16.png",
-      "48": "images/icon48.png",
-      "128": "images/icon128.png"
+      "16": "images/skull16.png",
+      "48": "images/skull48.png",
+      "128": "images/skull128.png"
     }
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_end"
     }
   ],
   "icons": {
-    "16": "images/icon16.png",
-    "48": "images/icon48.png",
-    "128": "images/icon128.png"
+    "16": "images/skull16.png",
+    "48": "images/skull48.png",
+    "128": "images/skull128.png"
   }
 } 
